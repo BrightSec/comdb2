@@ -1961,13 +1961,15 @@ int process_set_commands(struct sqlclntstate *clnt, CDB2SQLQUERY *sql_query)
                 while (*sqlstr && !isspace(*sqlstr)) {
                     ++sqlstr;
                 }
+                int at_end = (*sqlstr == 0);
                 *sqlstr = 0;
                 if ((sqlstr - spname) < MAX_SPNAME) {
                     strncpy0(clnt->spname, spname, MAX_SPNAME);
                 } else {
                     rc = ii + 1;
                 }
-                ++sqlstr;
+                if (!at_end)
+                    ++sqlstr;
 
                 sqlstr = skipws(sqlstr);
                 int ver = strtol(sqlstr, &endp, 10);
