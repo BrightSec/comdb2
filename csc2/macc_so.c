@@ -1981,7 +1981,10 @@ void end_table()
     if (any_errors == 0)
         if (compute_all_data(macc_globals->ntables) != 0)
             ++any_errors;
-    macc_globals->ntables++;
+    /* never advance past MAXTBLS: tables[ntables] is dereferenced as the
+     * "current" table even after errors */
+    if (macc_globals->ntables < MAXTBLS)
+        macc_globals->ntables++;
     unionflag = 0;
     macc_globals->current_union = 0;
     macc_globals->union_index = -1;

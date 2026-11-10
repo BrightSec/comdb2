@@ -191,7 +191,7 @@ typedef struct macc_globals_t {
     struct constraint constraints[MAXCNSTRTS];
     struct check_constraint check_constraints[MAXCNSTRTS];
     struct symbol symb[MAX];
-    struct table tables[MAXTBLS];
+    struct table tables[MAXTBLS + 1]; /* one spare: tables[ntables] is the current table */
     unsigned int un_start[MAX]; /* # of levels of union to start at this sym */
     unsigned int un_end[MAX];   /* # of levels of union to end at this sym */
     unsigned int un_reset[MAX]; /* reset offset flag for a union */
