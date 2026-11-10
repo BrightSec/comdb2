@@ -1653,7 +1653,8 @@ int handle_set_querylimits(char *sqlstr, struct sqlclntstate *clnt)
     double cost;
     char *endp;
 
-    sqlstr += 11;
+    /* skip "querylimit" only (10 chars); the string may end right here */
+    sqlstr += 10;
     sqlstr = skipws(sqlstr);
 
     if (strncasecmp(sqlstr, "warn", 4) == 0) {
