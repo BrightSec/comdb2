@@ -7668,6 +7668,8 @@ int datetime_check_range(long long secs, int fracs)
     if (!client_##from_dt##_get_switch(&cdt, p_in, p_in_end, from_little)) {   \
         return -1;                                                             \
     }                                                                          \
+    /* the client's tzname is not guaranteed to be NUL-terminated */           \
+    cdt.tzname[sizeof(cdt.tzname) - 1] = 0;                                    \
                                                                                \
     if (!cdt.tzname[0] && (!inopts || !(inopts->flags & FLD_CONV_TZONE))) {    \
         return -1;                                                             \
@@ -14705,20 +14707,30 @@ int get_type(struct param_data *param, void *p, int len, int type,
         param->len = len;
         return 0;
     case CLIENT_DATETIME:
+        if (len < (int)sizeof(cdb2_client_datetime_t) || 1)
+            return -1;
         param->len = sizeof(param->u.dt);
         return client_datetime_to_dttz(p, tzname, &param->u.dt, little);
     case CLIENT_DATETIMEUS:
+        if (len < (int)sizeof(cdb2_client_datetimeus_t) || 1)
+            return -1;
         param->len = sizeof(param->u.dt);
         return client_datetimeus_to_dttz(p, tzname, &param->u.dt, little);
     case CLIENT_INTVYM:
+        if (len < (int)sizeof(cdb2_client_intv_ym_t))
+            return -1;
         param->len = sizeof(param->u.tv);
         client_intv_ym_to_intv_t(p, &param->u.tv, flip);
         return 0;
     case CLIENT_INTVDS:
+        if (len < (int)sizeof(cdb2_client_intv_ds_t))
+            return -1;
         param->len = sizeof(param->u.tv);
         client_intv_ds_to_intv_t(p, &param->u.tv, flip);
         return 0;
     case CLIENT_INTVDSUS:
+        if (len < (int)sizeof(cdb2_client_intv_dsus_t))
+            return -1;
         param->len = sizeof(param->u.tv);
         client_intv_dsus_to_intv_t(p, &param->u.tv, flip);
         return 0;

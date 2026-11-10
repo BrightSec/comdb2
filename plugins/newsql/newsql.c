@@ -1653,7 +1653,8 @@ int handle_set_querylimits(char *sqlstr, struct sqlclntstate *clnt)
     double cost;
     char *endp;
 
-    sqlstr += 11;
+    /* skip "querylimit" only (10 chars); the string may end right here */
+    sqlstr += 10;
     sqlstr = skipws(sqlstr);
 
     if (strncasecmp(sqlstr, "warn", 4) == 0) {
@@ -1740,6 +1741,27 @@ int partition_extract_string_params(char *sql, char **dbnames, uint32_t nparams,
         crt = strt;
     }
 
+    return 0;
+}
+
+/* Returns non-zero if sqlite3Dequote() can safely process 'z', i.e. it is
+ * either not quoted or its opening quote has a matching closing quote before
+ * the terminating NUL. */
+static int quoted_string_is_terminated(const char *z)
+{
+    char quote = z[0];
+    if (quote != '"' && quote != '\'' && quote != '[' && quote != '`')
+        return 1;
+    if (quote == '[')
+        quote = ']';
+    for (int i = 1; z[i]; i++) {
+        if (z[i] == quote) {
+            if (z[i + 1] == quote)
+                i++;
+            else
+                return 1;
+        }
+    }
     return 0;
 }
 
@@ -1880,7 +1902,8 @@ int process_set_commands(struct sqlclntstate *clnt, CDB2SQLQUERY *sql_query)
             } else if (strncasecmp(sqlstr, "user", 4) == 0) {
                 sqlstr += 4;
                 sqlstr = skipws(sqlstr);
-                if (!sqlite3IsCorrectlyQuoted(sqlstr)) {
+                if (!sqlite3IsCorrectlyQuoted(sqlstr) ||
+                    !quoted_string_is_terminated(sqlstr)) {
                     snprintf(err, sizeof(err),
                              "set user: '%s' is an incorrectly quoted string",
                              sqlstr);
@@ -1905,7 +1928,8 @@ int process_set_commands(struct sqlclntstate *clnt, CDB2SQLQUERY *sql_query)
             } else if (strncasecmp(sqlstr, "password", 8) == 0) {
                 sqlstr += 8;
                 sqlstr = skipws(sqlstr);
-                if (!sqlite3IsCorrectlyQuoted(sqlstr)) {
+                if (!sqlite3IsCorrectlyQuoted(sqlstr) ||
+                    !quoted_string_is_terminated(sqlstr)) {
                     snprintf(err, sizeof(err),
                              "set user: '%s' is an incorrectly quoted string",
                              sqlstr);
@@ -1937,18 +1961,22 @@ int process_set_commands(struct sqlclntstate *clnt, CDB2SQLQUERY *sql_query)
                 while (*sqlstr && !isspace(*sqlstr)) {
                     ++sqlstr;
                 }
+                int at_end = (*sqlstr == 0);
                 *sqlstr = 0;
                 if ((sqlstr - spname) < MAX_SPNAME) {
                     strncpy0(clnt->spname, spname, MAX_SPNAME);
                 } else {
                     rc = ii + 1;
                 }
-                ++sqlstr;
+                if (!at_end)
+                    ++sqlstr;
 
                 sqlstr = skipws(sqlstr);
                 int ver = strtol(sqlstr, &endp, 10);
                 if (*sqlstr == '\'' || *sqlstr == '"') { // looks like a str
-                    if (strlen(sqlstr) < MAX_SPVERSION_LEN) {
+                    if (strlen(sqlstr) < MAX_SPVERSION_LEN &&
+                        sqlite3IsCorrectlyQuoted(sqlstr) &&
+                        quoted_string_is_terminated(sqlstr)) {
                         clnt->spversion.version_str = strdup(sqlstr);
                         sqlite3Dequote(clnt->spversion.version_str);
                     } else {

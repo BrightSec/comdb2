@@ -376,11 +376,21 @@ re_match_end:
   return rc;
 }
 
+/* Limits on the size of a compiled RE */
+#define RE_MAX_REPEAT 1000       /* Largest m or n in X{m,n} */
+#define RE_MAX_STATE  100000     /* Largest number of states added by X{m,n} */
+
 /* Resize the opcode and argument arrays for an RE under construction.
 */
 static int re_resize(ReCompiled *p, int N){
   char *aOp;
   int *aArg;
+  /* State numbers are stored in an unsigned short in re_match() */
+  if( N>0xffff && p->nAlloc<0xffff ) N = 0xffff;
+  if( N>0xffff || (unsigned)N<=p->nAlloc ){
+    p->zErr = "regular expression too large";
+    return 1;
+  }
   aOp = sqlite3_realloc64(p->aOp, N*sizeof(p->aOp[0]));
   if( aOp==0 ) return 1;
   p->aOp = aOp;
@@ -418,6 +428,7 @@ static int re_append(ReCompiled *p, int op, int arg){
 */
 static void re_copy(ReCompiled *p, int iStart, int N){
   if( p->nState+N>=p->nAlloc && re_resize(p, p->nAlloc*2+N) ) return;
+  if( p->nState+N>p->nAlloc ) return;
   memcpy(&p->aOp[p->nState], &p->aOp[iStart], N*sizeof(p->aOp[0]));
   memcpy(&p->aArg[p->nState], &p->aArg[iStart], N*sizeof(p->aArg[0]));
   p->nState += N;
@@ -572,17 +583,26 @@ static const char *re_subcompile_string(ReCompiled *p){
         int m = 0, n = 0;
         int sz, j;
         if( iPrev<0 ) return "'{m,n}' without operand";
-        while( (c=rePeek(p))>='0' && c<='9' ){ m = m*10 + c - '0'; p->sIn.i++; }
+        while( (c=rePeek(p))>='0' && c<='9' ){
+          m = m*10 + c - '0'; p->sIn.i++;
+          if( m>RE_MAX_REPEAT ) return "repeat count too large in '{m,n}'";
+        }
         n = m;
         if( c==',' ){
           p->sIn.i++;
           n = 0;
-          while( (c=rePeek(p))>='0' && c<='9' ){ n = n*10 + c-'0'; p->sIn.i++; }
+          while( (c=rePeek(p))>='0' && c<='9' ){
+            n = n*10 + c-'0'; p->sIn.i++;
+            if( n>RE_MAX_REPEAT ) return "repeat count too large in '{m,n}'";
+          }
         }
         if( c!='}' ) return "unmatched '{'";
         if( n>0 && n<m ) return "n less than m in '{m,n}'";
         p->sIn.i++;
         sz = p->nState - iPrev;
+        if( (sqlite3_int64)sz*(n>m ? n : m) > RE_MAX_STATE ){
+          return "regular expression too large";
+        }
         if( m==0 ){
           if( n==0 ) return "both m and n are zero in '{m,n}'";
           re_insert(p, iPrev, RE_OP_FORK, sz+1);
@@ -709,6 +729,7 @@ const char *re_compile(ReCompiled **ppRe, const char *zIn, int noCase){
   pRe->sIn.i = 0;
   pRe->sIn.mx = (int)strlen(zIn);
   zErr = re_subcompile_re(pRe);
+  if( zErr==0 ) zErr = pRe->zErr;
   if( zErr ){
     re_free(pRe);
     return zErr;
