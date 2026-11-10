@@ -2601,6 +2601,37 @@ int macc_ferror(FILE *fh)
     return 0;
 }
 
+/* Returns 1 if the schema text contains a C-style comment that is never
+ * closed. The lexer cannot always cope with end of input inside a comment, so
+ * reject such text up front. String literals and // comments are skipped, as
+ * the lexer does not treat comment markers inside them as comments. */
+static int has_unterminated_comment(const char *s)
+{
+    const char *p = s;
+    while (*p) {
+        if (*p == '"') {
+            const char *q = p + 1;
+            while (*q && *q != '\n' && *q != '"') {
+                if (*q == '\\' && q[1] && q[1] != '\n')
+                    q++;
+                q++;
+            }
+            p = (*q == '"') ? q + 1 : p + 1;
+        } else if (p[0] == '/' && p[1] == '/') {
+            while (*p && *p != '\n')
+                p++;
+        } else if (p[0] == '/' && p[1] == '*') {
+            const char *end = strstr(p + 2, "*/");
+            if (end == NULL)
+                return 1;
+            p = end + 2;
+        } else {
+            p++;
+        }
+    }
+    return 0;
+}
+
 /*  Make sure you call dyns_init_globals(); before calling this function
  *  in order to initialize the global structure on which this and other dyns_
  *  functions rely.
@@ -2625,6 +2656,10 @@ static int dyns_load_schema_int(char *filename, char *schematxt, char *dbname, c
 
     /* check args for an input filename or any options */
     if (schematxt) {
+        if (has_unterminated_comment(schematxt)) {
+            csc2_error("EOF IN COMMENT. ABORTING!\n");
+            return -1;
+        }
         ischematext = schematxt;
         ipos = 0;
         iusestr = 1;
