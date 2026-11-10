@@ -385,6 +385,12 @@ re_match_end:
 static int re_resize(ReCompiled *p, int N){
   char *aOp;
   int *aArg;
+  /* State numbers are stored in an unsigned short in re_match() */
+  if( N>0xffff && p->nAlloc<0xffff ) N = 0xffff;
+  if( N>0xffff || (unsigned)N<=p->nAlloc ){
+    p->zErr = "regular expression too large";
+    return 1;
+  }
   aOp = sqlite3_realloc64(p->aOp, N*sizeof(p->aOp[0]));
   if( aOp==0 ) return 1;
   p->aOp = aOp;
@@ -422,6 +428,7 @@ static int re_append(ReCompiled *p, int op, int arg){
 */
 static void re_copy(ReCompiled *p, int iStart, int N){
   if( p->nState+N>=p->nAlloc && re_resize(p, p->nAlloc*2+N) ) return;
+  if( p->nState+N>p->nAlloc ) return;
   memcpy(&p->aOp[p->nState], &p->aOp[iStart], N*sizeof(p->aOp[0]));
   memcpy(&p->aArg[p->nState], &p->aArg[iStart], N*sizeof(p->aArg[0]));
   p->nState += N;
@@ -722,6 +729,7 @@ const char *re_compile(ReCompiled **ppRe, const char *zIn, int noCase){
   pRe->sIn.i = 0;
   pRe->sIn.mx = (int)strlen(zIn);
   zErr = re_subcompile_re(pRe);
+  if( zErr==0 ) zErr = pRe->zErr;
   if( zErr ){
     re_free(pRe);
     return zErr;
