@@ -218,8 +218,15 @@ void add_check_constraint(char *expr)
     }
 
     ++macc_globals->n_check_constraints;
+    if (expr == NULL || strlen(expr) < sizeof("where") - 1) {
+        /* missing WHERE clause; keep the slot allocated so that
+         * set_constraint_name() stays in bounds */
+        csc2_syntax_error("ERROR: CHECK CONSTRAINT requires a WHERE clause\n");
+        any_errors++;
+        expr = "";
+    }
     /* We have to move past "where" and subsequent spaces. */
-    expr += sizeof("where");
+    expr += strlen(expr) < sizeof("where") ? 0 : sizeof("where") - 1;
     while (*expr && isspace(*expr)) {
         expr++;
     }
