@@ -243,6 +243,7 @@ struct connection {
     char protocol[4];
     int fd;
     int is_unix;
+    bool registered = false;
     std::string svc;
     TAILQ_ENTRY(connection) entry;
     connection(int f)
@@ -259,10 +260,15 @@ struct connection {
     {
         debug_log("%s fd:%d\n", __func__, fd);
         --active_connections;
-        const auto& c = connection_map.find(svc);
-        if (c != connection_map.end() && c->second == this) {
-            debug_log("%s removing from active connections:%s fd:%d\n", __func__, svc.c_str(), fd);
-            connection_map.erase(c);
+        if (registered) {
+            for (auto c = connection_map.begin(); c != connection_map.end();) {
+                if (c->second == this) {
+                    debug_log("%s removing from active connections:%s fd:%d\n", __func__, c->first.c_str(), fd);
+                    c = connection_map.erase(c);
+                } else {
+                    ++c;
+                }
+            }
         } else {
             TAILQ_REMOVE(&accept_list, this, entry);
         }
@@ -438,7 +444,7 @@ static void routefd(int serverfd, short what, void *arg)
         syslog(LOG_ERR, "%s:sendmsg fd:%d rc:%zd expected:%zu (%s)\n", __func__, serverfd, rc, sizeof(c->protocol),
                strerror(errno));
         const auto &s = connection_map.find(c->svc);
-        if (s != connection_map.end()) {
+        if (s != connection_map.end() && s->second != c) {
             delete s->second;
         }
     }
@@ -469,7 +475,7 @@ static int run_cmd(char *cmd, connection *c)
             c->reply("-1 missing service name\n");
             return 0;
         }
-        if (check_active(svc)) {
+        if (check_active(svc) || (c->is_unix && c->registered)) {
             c->reply("-1 service already active\n");
             return 0;
         }
@@ -484,6 +490,7 @@ static int run_cmd(char *cmd, connection *c)
         }
         if (c->is_unix) {
             c->svc = svc;
+            c->registered = true;
             connection_map.insert(std::make_pair(svc, c));
             TAILQ_REMOVE(&accept_list, c, entry);
         }
